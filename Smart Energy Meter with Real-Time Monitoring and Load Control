@@ -1,0 +1,95 @@
+#include <SPI.h>
+#include <SD.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// Pin assignments
+const int currentSensorPin = A0; // Pin for current sensor input
+const int relayPin = 7;          // Pin for relay module to control load
+const int sdChipSelect = 10;     // Pin for SD card module
+const int voltagePin = A1;       // Pin for voltage sensor input
+
+// Variables
+float currentValue; // Stores the current value
+float voltageValue; // Stores the voltage value
+float powerValue;   // Stores the power value
+float energyValue = 0; // Stores the energy consumption
+unsigned long previousMillis = 0;
+const long interval = 1000; // Interval to update energy value (1 second)
+
+// LCD setup
+LiquidCrystal_I2C lcd(0x27, 16, 2); // I2C address, 16x2 LCD
+
+// Setup
+void setup() {
+  Serial.begin(9600);
+  lcd.begin(16, 2);
+  lcd.backlight();
+  pinMode(relayPin, OUTPUT);
+  digitalWrite(relayPin, LOW); // Ensure relay is off initially
+
+  // SD card setup
+  if (!SD.begin(sdChipSelect)) {
+    Serial.println("SD card initialization failed!");
+    return;
+  }
+  Serial.println("SD card initialized.");
+  
+  // Initialize LCD
+  lcd.setCursor(0, 0);
+  lcd.print("Smart Energy Meter");
+  delay(2000);
+  lcd.clear();
+}
+
+void loop() {
+  // Read sensor values
+  currentValue = analogRead(currentSensorPin) * (5.0 / 1023.0); // Convert to voltage
+  voltageValue = analogRead(voltagePin) * (5.0 / 1023.0) * 220.0; // Convert to actual voltage assuming 220V supply
+  powerValue = currentValue * voltageValue; // Calculate power in Watts
+  
+  // Calculate energy consumption
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+    energyValue += powerValue * (interval / 3600000.0); // Convert power to energy (Wh)
+  }
+
+  // Display values on LCD
+  lcd.setCursor(0, 0);
+  lcd.print("Power: ");
+  lcd.print(powerValue, 2);
+  lcd.print(" W");
+  
+  lcd.setCursor(0, 1);
+  lcd.print("Energy: ");
+  lcd.print(energyValue, 2);
+  lcd.print(" Wh");
+
+  // Save data to SD card
+  File dataFile = SD.open("datalog.txt", FILE_WRITE);
+  if (dataFile) {
+    dataFile.print("Current: ");
+    dataFile.print(currentValue);
+    dataFile.print(" A, Voltage: ");
+    dataFile.print(voltageValue);
+    dataFile.print(" V, Power: ");
+    dataFile.print(powerValue);
+    dataFile.print(" W, Energy: ");
+    dataFile.println(energyValue);
+    dataFile.close();
+  } else {
+    Serial.println("Error opening datalog.txt");
+  }
+
+  // Remote load control (simulate with a condition)
+  if (energyValue > 100) { // Example condition to turn off load after 100Wh
+    digitalWrite(relayPin, HIGH); // Turn off load
+    lcd.setCursor(0, 1);
+    lcd.print("Load OFF        ");
+  } else {
+    digitalWrite(relayPin, LOW); // Keep load on
+  }
+
+  delay(1000); // Delay for stable readings
+}
